@@ -1,0 +1,72 @@
+# Import required libraries
+library(deSolve)
+library(ggplot2)
+library(glue)
+# Generate example dataset
+data <- data.frame(
+wealth = c(10399, 10399, 15598.5),
+consumption = c(10399, 11554.44, 10399),
+r_val = c(5, 2.5, 0),
+t_val = c(10, 20, 20)
+)
+str(data) # Inspect data structure
+## 'data.frame':    3 obs. of  4 variables:
+##  $ wealth     : num  10399 10399 15598
+##  $ consumption: num  10399 11554 10399
+##  $ r_val      : num  5 2.5 0
+##  $ t_val      : num  10 20 20
+# Define the ODE model function
+ode_model <- function(t, state, parameters) {
+a <- state["a"]; c <- state["c"]; r <- parameters["r"]; W <- parameters["W"]
+da <- 0.0000367*r*a - 0.0014*c + 3.42 + W
+dc <- 0.0000795*a - 0.24938*r - 0.811
+list(c(da, dc))
+}
+# Function to compute main trajectory and perturbed trajectories
+calculate_trajectories <- function(r_val, t_val, target_coords, W_val=20.666, eps=1){
+params <- c(r=r_val, W=W_val)
+main_start <- tail(as.data.frame(ode(target_coords, seq(t_val,0,-0.1), ode_model, params)),1)
+
+# Define small perturbations for sensitivity analysis
+offsets <- list(up=c(0,eps), left=c(-eps,0), down=c(0,-eps))
+
+# Solve ODE for perturbed trajectories
+perturbed <- lapply(offsets, function(off){
+ode(c(a=main_start$a+off[1], c=main_start$c+off[2]), seq(0,t_val,0.1), ode_model, params) |> as.data.frame()
+})
+
+# Solve ODE for main trajectory
+main <- ode(c(a=main_start$a, c=main_start$c), seq(0,t_val,0.1), ode_model, params) |> as.data.frame()
+list(main=main, perturbed=perturbed)
+}
+# Function to render trajectory plots
+render_plot <- function(results, target, title="Trajectory"){
+colors <- c(up="darkorange", left="forestgreen", down="firebrick")
+ggplot() +
+geom_path(data=results$main, aes(a,c), color="black", size=1.2) + # main trajectory
+geom_path(data=results$perturbed$up, aes(a,c), color=colors["up"], linetype="dashed") +
+geom_path(data=results$perturbed$left, aes(a,c), color=colors["left"], linetype="dashed") +
+geom_path(data=results$perturbed$down, aes(a,c), color=colors["down"], linetype="dashed") +
+geom_point(aes(x=target["a"], y=target["c"]), color="blue", size=3) + # target point
+labs(title=title, x="Wealth (a)", y="Consumption (c)") +
+theme_minimal(base_size=12)
+}
+# Apply functions to first row of data
+row <- data[1, ]
+target <- c(a=row$wealth, c=row$consumption)
+results <- calculate_trajectories(row$r_val, row$t_val, target)
+
+# Plot and print
+
+plot_example <- render_plot(results, target, title=glue("Scenario: Point A, r={row$r_val}, t={row$t_val}"))
+print(plot_example)
+ 
+# Show first 5 rows of main trajectory data
+
+head(results$main,5)
+##   time        a        c
+## 1  0.0 10284.84 10411.36
+## 2  0.1 10285.97 10411.23
+## 3  0.2 10287.11 10411.11
+## 4  0.3 10288.25 10410.99
+## 5  0.4 10289.39 10410.86
